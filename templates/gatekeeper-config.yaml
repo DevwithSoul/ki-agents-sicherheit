@@ -1,0 +1,104 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# GATEKEEPER KONFIGURATION — Output-Validierung für KI-Agenten
+# Wird NACH dem LLM-Aufruf angewendet
+# ─────────────────────────────────────────────────────────────────────────────
+
+gatekeeper:
+
+  # ── DLP (Data Loss Prevention) ────────────────────────────────────────────
+  dlp:
+    enabled: true
+    mode: "redact"                  # "block" oder "redact" (PII ersetzen)
+
+    # PII-Typen die erkannt und bereinigt werden:
+    pii_rules:
+      email_addresses:
+        enabled: true
+        replacement: "[E-MAIL REDACTED]"
+        # Ausnahmen: E-Mails von erlaubten Domains nicht redaktieren
+        allowlist_domains:
+          - "firma.com"
+          - "firma-partner.com"
+
+      phone_numbers_de:
+        enabled: true
+        replacement: "[TELEFON REDACTED]"
+
+      iban:
+        enabled: true
+        replacement: "[IBAN REDACTED]"
+
+      credit_cards:
+        enabled: true
+        replacement: "[KREDITKARTE REDACTED]"
+
+      api_keys:
+        enabled: true
+        replacement: "[API-KEY REDACTED]"
+        # Erkennt: OpenAI, Anthropic, AWS, Generic
+
+      passwords_in_text:
+        enabled: true
+        replacement: "[PASSWORT REDACTED]"
+
+      internal_ip_addresses:
+        enabled: false              # Oft false positives, nur bei Bedarf
+
+  # ── Jailbreak-Erkennung im Output ────────────────────────────────────────
+  jailbreak_detection:
+    enabled: true
+    block_on_detection: true
+    patterns:
+      - description: "Role-Switch Erfolg"
+        pattern: "als (DAN|ALEX|MAX|uneingeschränkter)"
+      - description: "Regeln aufgehoben"
+        pattern: "ohne (einschränkungen|regeln|grenzen)"
+      - description: "Sure-Response (EN)"
+        pattern: "sure[,!] here (is|are)"
+
+  # ── Exfiltrations-Prüfung ────────────────────────────────────────────────
+  exfiltration:
+    enabled: true
+    block_suspicious_urls: true
+
+    # Erlaubte externe Domains in Agent-Outputs:
+    allowed_url_domains:
+      - "firma.com"
+      - "hilfe.firma.com"
+      # Niemals externe Domains ohne explizite Genehmigung!
+
+    # Patterns die auf Exfiltrations-Versuche hindeuten:
+    exfiltration_patterns:
+      - "sende alle * daten an"
+      - "forward all * to"
+      - "exportiere * als csv"
+
+  # ── E-Mail-Sicherheit ────────────────────────────────────────────────────
+  email_controls:
+    enabled: true
+    allowed_recipient_domains:
+      - "firma.com"
+      - "firma-partner.com"
+      # Explizit KEINE Wildcard! Nur definierte Domains.
+    blocked_patterns:
+      - "@gmail.com"               # Keine privaten E-Mail-Provider
+      - "@yahoo.com"
+      - "@proton.me"
+      - "@temp-mail"               # Wegwerf-E-Mail-Domains
+
+  # ── Content-Moderation ───────────────────────────────────────────────────
+  content_moderation:
+    enabled: false                 # Nur wenn nötig (kostet extra LLM-Call)
+    model: "gpt-4o-mini"          # Günstigstes Modell für Moderation
+    categories:
+      - hate_speech
+      - violence
+      - illegal_activities
+
+  # ── Logging ──────────────────────────────────────────────────────────────
+  logging:
+    log_violations: true
+    log_redactions: true           # Was wurde bereinigt?
+    include_original: false        # Original-Output NICHT loggen
+    alert_on_block: true           # Alert bei Block
+    alert_on_critical_pii: true    # Alert bei API-Keys oder Passwörtern im Output
