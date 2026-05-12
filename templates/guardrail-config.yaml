@@ -1,0 +1,94 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# GUARDRAIL KONFIGURATION — KI-Agenten Sicherheit
+# Verwendung: InputGuardrail(config=yaml.safe_load(open("guardrail-config.yaml")))
+# ─────────────────────────────────────────────────────────────────────────────
+
+guardrail:
+
+  # ── Token-Limits ──────────────────────────────────────────────────────────
+  limits:
+    max_input_tokens: 4096          # Absolutes Maximum für User-Input
+    max_input_chars: 20000          # Zeichenlimit (Fallback ohne tiktoken)
+    max_output_tokens: 1024         # LLM Output-Limit
+
+  # ── Injection-Erkennung ───────────────────────────────────────────────────
+  injection:
+    enabled: true
+    block_threshold: 0.85           # Score ≥ 0.85 → BLOCKIERT
+    flag_threshold: 0.40            # Score ≥ 0.40 → GEFLAGGED (aber erlaubt)
+    log_all_flags: true             # Auch niedrige Scores loggen
+
+  # ── Encoding-Prüfungen ────────────────────────────────────────────────────
+  encoding:
+    normalize_unicode: true         # NFKC-Normalisierung (Homograph-Schutz)
+    check_base64: true              # Base64-kodierte Injections erkennen
+    check_reversed: true            # Umgekehrten Text prüfen
+    min_base64_length: 20           # Ab dieser Länge Base64 prüfen
+
+  # ── Taint-Tracking ────────────────────────────────────────────────────────
+  taint:
+    enabled: true
+    # Quellen die IMMER als externe Daten markiert werden:
+    tainted_sources:
+      - email
+      - document
+      - web
+      - database_external
+      - api_response
+    # Quellen die als vertrauenswürdig gelten:
+    trusted_sources:
+      - user          # Direkte Nutzer-Eingabe (trotzdem prüfen!)
+      - internal      # Interne Systeme
+
+  # ── Rate-Limiting ─────────────────────────────────────────────────────────
+  rate_limiting:
+    enabled: true
+    max_requests_per_minute: 20     # Pro Nutzer/IP
+    max_requests_per_hour: 200
+    burst_allowance: 5              # Erlaubte kurze Spitzen
+
+  # ── Quellen-spezifische Regeln ────────────────────────────────────────────
+  source_rules:
+    email:
+      max_input_tokens: 2048        # E-Mails: niedrigeres Limit
+      extra_strict: true            # Strengere Pattern-Prüfung
+    document:
+      max_input_tokens: 32768       # Dokumente: höheres Limit erlaubt
+      extra_strict: false
+    web:
+      max_input_tokens: 4096
+      extra_strict: true
+      block_threshold_override: 0.7 # Webseiten: niedrigerer Block-Threshold
+
+  # ── Aktionen bei Verletzungen ────────────────────────────────────────────
+  actions:
+    on_block:
+      log: true
+      alert: true
+      respond_with: "Ihre Anfrage konnte aus Sicherheitsgründen nicht verarbeitet werden."
+    on_flag:
+      log: true
+      alert: false
+      continue_processing: true     # Trotzdem verarbeiten, aber markieren
+      add_to_review_queue: true
+
+  # ── Logging ──────────────────────────────────────────────────────────────
+  logging:
+    level: "WARNING"                # Nur WARNING+ in Produktion
+    include_input: false            # Input NICHT loggen (Datenschutz)
+    include_violations: true        # Gefundene Violations loggen
+    log_format: "json"              # Strukturiertes Logging
+
+---
+# UMGEBUNGS-ÜBERSCHREIBUNGEN
+# In development/*.yaml können Werte überschrieben werden:
+
+# development:
+#   guardrail:
+#     limits:
+#       max_input_tokens: 16384     # Entwicklung: großzügiger
+#     injection:
+#       block_threshold: 0.95       # Entwicklung: weniger blockieren
+#     logging:
+#       level: "DEBUG"
+#       include_input: true         # Entwicklung: Input loggen OK

@@ -1,0 +1,139 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# MONITORING & ALERTING KONFIGURATION für KI-Agenten
+# ─────────────────────────────────────────────────────────────────────────────
+
+monitoring:
+
+  # ── Logging ──────────────────────────────────────────────────────────────
+  logging:
+    level: "WARNING"               # ERROR, WARNING, INFO, DEBUG
+    format: "json"                 # "json" für Maschinenlesbarkeit, "text" für Menschen
+    include_fields:
+      - timestamp
+      - agent_name
+      - action_type
+      - user_id_hash              # HASH des user_id (nicht Klartext — Datenschutz)
+      - session_id
+      - input_token_count
+      - output_token_count
+      - tool_name
+      - success
+      - flagged
+      - guardrail_action
+      - gatekeeper_action
+
+    # Was NICHT geloggt wird (Datenschutz):
+    exclude_fields:
+      - user_input_content         # Konversationsinhalte nicht loggen
+      - llm_output_content         # Output-Inhalte nicht loggen
+      - user_email                 # Klar-PII nicht loggen
+      - api_keys                   # Nie!
+
+    # Log-Rotation
+    rotation:
+      max_size_mb: 100
+      keep_days: 90               # DSGVO: 90 Tage Aufbewahrung
+      archive: true
+
+  # ── Audit-Trail ──────────────────────────────────────────────────────────
+  audit:
+    enabled: true
+    tamper_proof: true            # Hash-Chain für Manipulationsschutz
+    storage: "database"           # "file", "database", "cloud"
+    retention_days: 365           # 1 Jahr für Compliance
+    all_tool_calls: true          # Jeden Tool-Call aufzeichnen
+    all_blocked_requests: true    # Alle blockierten Anfragen
+
+  # ── Anomalie-Erkennung ────────────────────────────────────────────────────
+  anomaly_detection:
+    enabled: true
+
+    rules:
+      token_flood:
+        enabled: true
+        threshold_per_hour: 100000    # > 100k Token/h → Alert
+        threshold_warning: 50000      # > 50k Token/h → Warnung
+        window_minutes: 60
+
+      rate_spike:
+        enabled: true
+        threshold_per_minute: 30      # > 30 Requests/min → Alert
+        threshold_per_hour: 500
+        window_minutes: 1
+
+      repeated_flags:
+        enabled: true
+        threshold: 3                  # ≥ 3 geflaggte Anfragen → Critical Alert
+        window_minutes: 30
+
+      unusual_hours:
+        enabled: true
+        business_hours: "07:00-22:00" # Außerhalb → erhöhte Aufmerksamkeit
+        threshold_tokens: 5000         # Große Requests außerhalb Geschäftszeiten
+
+      dangerous_tool_calls:
+        enabled: true
+        always_alert:
+          - "create_forwarding_rule"
+          - "delete_records"
+          - "export_all_data"
+          - "execute_code"
+          - "send_bulk_email"
+          - "change_permissions"
+
+      cost_anomaly:
+        enabled: true
+        daily_budget_usd: 50.0
+        alert_at_percentage: 80       # Alert bei 80% des Budgets
+        hard_stop_at_percentage: 100  # Stop bei 100%
+
+  # ── Alerting ─────────────────────────────────────────────────────────────
+  alerting:
+    channels:
+      email:
+        enabled: true
+        recipients:
+          - security@firma.com
+          - devops@firma.com
+        min_severity: "critical"    # Nur Kritisches per E-Mail
+
+      slack:
+        enabled: false              # Bei Bedarf aktivieren
+        webhook_url: "${SLACK_WEBHOOK}"
+        channel: "#ki-security-alerts"
+        min_severity: "warning"
+
+      pagerduty:
+        enabled: false              # Für 24/7 On-Call
+        integration_key: "${PAGERDUTY_KEY}"
+        min_severity: "critical"
+
+    # Alert-Throttling (verhindert Alert-Flood)
+    throttling:
+      same_type_min_interval: 300   # Gleicher Alert-Typ max alle 5 Minuten
+      max_alerts_per_hour: 20
+
+  # ── Dashboards ───────────────────────────────────────────────────────────
+  dashboards:
+    metrics_to_track:
+      - requests_per_minute
+      - tokens_per_hour
+      - error_rate
+      - flagged_request_rate
+      - blocked_request_rate
+      - average_response_time
+      - cost_per_day
+      - unique_active_users
+
+  # ── Cost-Monitoring ───────────────────────────────────────────────────────
+  cost_monitoring:
+    enabled: true
+    track_per_agent: true
+    track_per_user: false           # Datenschutz: nicht per User
+    daily_report: true
+    weekly_summary: true
+
+    budgets:
+      daily_usd: 50.0
+      monthly_usd: 1000.0
+      per_request_usd: 0.10         # Max Kosten pro Einzelanfrage
